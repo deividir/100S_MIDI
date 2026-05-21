@@ -906,11 +906,11 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* i2cHandle)
  800081a:	613b      	str	r3, [r7, #16]
  800081c:	693b      	ldr	r3, [r7, #16]
     /**I2C1 GPIO Configuration
+    PB7     ------> I2C1_SDA
     PB8     ------> I2C1_SCL
-    PB9     ------> I2C1_SDA
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
- 800081e:	f44f 7340 	mov.w	r3, #768	@ 0x300
+    GPIO_InitStruct.Pin = GPIO_PIN_7|GPIO_PIN_8;
+ 800081e:	f44f 73c0 	mov.w	r3, #384	@ 0x180
  8000822:	617b      	str	r3, [r7, #20]
     GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
  8000824:	2312      	movs	r3, #18
@@ -958,10 +958,10 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* i2cHandle)
  800086c:	40020400 	.word	0x40020400
 
 08000870 <SendMidiNote>:
+/* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 void SendMidiNote(uint8_t note, uint8_t velocity)
 {
  8000870:	b580      	push	{r7, lr}
@@ -1097,8 +1097,6 @@ uint16_t ReadPitch(void)
  8000954:	20000124 	.word	0x20000124
 
 08000958 <main>:
-
-
 /* USER CODE END 0 */
 
 int main(void)

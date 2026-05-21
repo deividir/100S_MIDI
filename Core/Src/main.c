@@ -35,7 +35,6 @@ uint16_t ReadPitch(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 void SendMidiNote(uint8_t note, uint8_t velocity)
 {
     uint8_t midiPacket[4] = {0x09, 0x90, note, velocity};
@@ -63,9 +62,6 @@ uint16_t ReadPitch(void)
     }
     return sum / 8;
 }
-
-
-
 /* USER CODE END 0 */
 
 int main(void)

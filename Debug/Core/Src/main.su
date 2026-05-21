@@ -1,6 +1,6 @@
-../Core/Src/main.c:39:6:SendMidiNote	24	static
-../Core/Src/main.c:46:6:SendPitch	24	static
-../Core/Src/main.c:54:10:ReadPitch	16	static
-../Core/Src/main.c:71:5:main	40	static
-../Core/Src/main.c:126:6:SystemClock_Config	88	static
-../Core/Src/main.c:160:6:Error_Handler	4	static,ignoring_inline_asm
+../Core/Src/main.c:38:6:SendMidiNote	24	static
+../Core/Src/main.c:45:6:SendPitch	24	static
+../Core/Src/main.c:53:10:ReadPitch	16	static
+../Core/Src/main.c:67:5:main	40	static
+../Core/Src/main.c:122:6:SystemClock_Config	88	static
+../Core/Src/main.c:156:6:Error_Handler	4	static,ignoring_inline_asm
