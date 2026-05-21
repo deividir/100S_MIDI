@@ -1,0 +1,3 @@
+copiar o usb_device.c e o usbd_desc.c da pasta usb_device app
+
+copiar tb o usbd_desc.c dap pasta C:\Users\Deividi\Documents\CDJ_PROJECT\cdj_deividi1\USB_DEVICE\App
