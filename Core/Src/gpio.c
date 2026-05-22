@@ -57,10 +57,10 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : ZIP_Pin WAH_Pin HOLD_Pin TEMPO_Pin
-                           EJECT_Pin MT_Pin PLAY_Pin */
-  GPIO_InitStruct.Pin = ZIP_Pin|WAH_Pin|HOLD_Pin|TEMPO_Pin
-                          |EJECT_Pin|MT_Pin|PLAY_Pin;
+  /*Configure GPIO pins : ZIP_Pin WAH_Pin TEMPO_Pin EJECT_Pin
+                           MT_Pin PLAY_Pin HOLD_Pin */
+  GPIO_InitStruct.Pin = ZIP_Pin|WAH_Pin|TEMPO_Pin|EJECT_Pin
+                          |MT_Pin|PLAY_Pin|HOLD_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);

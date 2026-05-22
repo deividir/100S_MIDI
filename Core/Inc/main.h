@@ -57,8 +57,6 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define PITCH_Pin GPIO_PIN_1
-#define PITCH_GPIO_Port GPIOA
 #define STOP_Pin GPIO_PIN_2
 #define STOP_GPIO_Port GPIOA
 #define SEARCH__Pin GPIO_PIN_3
@@ -75,8 +73,6 @@ void Error_Handler(void);
 #define ZIP_GPIO_Port GPIOB
 #define WAH_Pin GPIO_PIN_1
 #define WAH_GPIO_Port GPIOB
-#define HOLD_Pin GPIO_PIN_2
-#define HOLD_GPIO_Port GPIOB
 #define TEMPO_Pin GPIO_PIN_3
 #define TEMPO_GPIO_Port GPIOB
 #define EJECT_Pin GPIO_PIN_4
@@ -85,6 +81,8 @@ void Error_Handler(void);
 #define MT_GPIO_Port GPIOB
 #define PLAY_Pin GPIO_PIN_6
 #define PLAY_GPIO_Port GPIOB
+#define HOLD_Pin GPIO_PIN_7
+#define HOLD_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
