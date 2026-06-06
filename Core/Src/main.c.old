@@ -1,0 +1,337 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2023 STMicroelectronics. All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component. If no LICENSE file comes with
+  * this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "adc.h"
+#include "i2c.h"
+#include "tim.h"
+#include "usb_device.h"
+#include "gpio.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include "lcd_i2c.h"
+#include "usbd_midi.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define PITCH_THRESHOLD 20 // Sensibilidade do Pitch
+#define PITCH_SEND_INTERVAL 10 // Intervalo mínimo para enviar Pitch Bend (ms)
+#define BUTTON_DEBOUNCE_TIME 150 // Tempo de debounce para botões (ms)
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
+/* ================= USB ================= */
+extern USBD_HandleTypeDef hUsbDeviceFS;
+
+/* ================= PITCH ================= */
+uint32_t adc_value = 0;
+float pitch_filtered = 0;
+int last_pitch_sent = -1;
+
+/* ================= ENCODER ================= */
+int32_t last_encoder = 0;
+
+/* ================= BUTTONS ================= */
+// Play Button (PB6)
+static uint8_t last_play_state = GPIO_PIN_SET; // Assume high (not pressed) initially with pull-up
+static uint32_t last_play_time = 0;
+
+// Cue Button (PA2)
+static uint8_t last_cue_state = GPIO_PIN_SET; // Assume high (not pressed) initially with pull-up
+static uint32_t last_cue_time = 0;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+/* USER CODE BEGIN PFP */
+void SendCC(uint8_t cc, uint8_t value);
+void SendNote(uint8_t note);
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+void SendCC(uint8_t cc, uint8_t value)
+{
+    uint8_t msg[4] = {0x0B, 0xB0, cc, value & 0x7F};
+    USBD_MIDI_SetTxBuffer(&hUsbDeviceFS, msg, 4);
+    USBD_MIDI_TransmitPacket(&hUsbDeviceFS);
+}
+
+void SendNote(uint8_t note)
+{
+    uint8_t msg[4] = {0x09, 0x90, note, 127}; // Note ON with max velocity
+    USBD_MIDI_SetTxBuffer(&hUsbDeviceFS, msg, 4);
+    USBD_MIDI_TransmitPacket(&hUsbDeviceFS);
+}
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_ADC1_Init();
+  MX_I2C1_Init();
+  MX_TIM3_Init(); // TIM3 para o Encoder
+  MX_USB_DEVICE_Init();
+  /* USER CODE BEGIN 2 */
+
+  HAL_Delay(500);
+
+  /* START ENCODER */
+  HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+
+  /* Inicializa last_encoder com cast correto para evitar wrap-around */
+  last_encoder = (int32_t)(int16_t)__HAL_TIM_GET_COUNTER(&htim3);
+
+  lcd_init();
+  lcd_clear();
+  lcd_send_string("CDJ READY");
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    uint32_t now = HAL_GetTick();
+
+    /* ================= PITCH (ADC + FILTER) ================= */
+    uint32_t soma = 0;
+
+    for(int i = 0; i < 16; i++)
+    {
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, 10);
+        soma += HAL_ADC_GetValue(&hadc1);
+    }
+
+    adc_value = soma / 16;
+
+    float target =
+        16383.0f -
+        (((float)adc_value / 4095.0f) * 16383.0f);
+
+    pitch_filtered =
+        (pitch_filtered * 0.95f) +
+        (target * 0.05f);
+
+    int pitch_value = (int)pitch_filtered;
+
+    /* Envia pitch com limite de frequencia (max 100x/segundo) */
+    static uint32_t last_pitch_time = 0;
+
+    if((last_pitch_sent < 0 || abs(pitch_value - last_pitch_sent) > PITCH_THRESHOLD)
+        && (now - last_pitch_time > PITCH_SEND_INTERVAL))
+    {
+        uint8_t msg[4];
+        msg[0] = 0x0E; // Pitch Bend message
+        msg[1] = 0xE0; // Channel 0
+        msg[2] = pitch_value & 0x7F; // LSB
+        msg[3] = (pitch_value >> 7) & 0x7F; // MSB
+
+        USBD_MIDI_SetTxBuffer(&hUsbDeviceFS, msg, 4);
+        USBD_MIDI_TransmitPacket(&hUsbDeviceFS);
+
+        last_pitch_sent = pitch_value;
+        last_pitch_time = now;
+    }
+
+    /* ================= JOG (TIM3 ENCODER) ================= */
+
+    /* Cast para int16_t corrige wrap-around automaticamente */
+    int32_t encoder = (int32_t)(int16_t)__HAL_TIM_GET_COUNTER(&htim3);
+    int32_t diff = encoder - last_encoder;
+
+    if(diff != 0)
+    {
+        int direction = (diff > 0) ? 1 : -1;
+
+        /* Usa velocidade real do giro, limitada a 10 */
+        int speed = abs(diff);
+        if(speed > 10) speed = 10;
+
+        int value = 64 + (direction * speed);
+        if(value < 1)   value = 1;
+        if(value > 127) value = 127;
+
+        SendCC(20, value); // CC 20 para o Jog
+
+        last_encoder = encoder;
+
+        // Opcional: Mostrar no LCD para debug
+        // char buf[16];
+        // sprintf(buf, "JOG: %ld", encoder);
+        // lcd_clear();
+        // lcd_send_string(buf);
+    }
+
+    /* ================= PLAY (debounce sem blocking delay) ================= */
+    // PB6 - Configurado como Input Pull-up
+    uint8_t play_state = HAL_GPIO_ReadPin(PLAY_GPIO_Port, PLAY_Pin);
+
+    if(play_state == GPIO_PIN_RESET && // Botão pressionado (GND)
+       last_play_state == GPIO_PIN_SET && // Transição de não pressionado para pressionado
+       (now - last_play_time) > BUTTON_DEBOUNCE_TIME) // Debounce
+    {
+        SendNote(60); // Nota MIDI para Play
+        last_play_time = now;
+    }
+    last_play_state = play_state;
+
+    /* ================= CUE (debounce sem blocking delay) ================= */
+    // PA2 - Configurado como Input Pull-up
+    uint8_t cue_state = HAL_GPIO_ReadPin(STOP_GPIO_Port, STOP_Pin); // Assumindo STOP_Pin é o pino do CUE
+
+    if(cue_state == GPIO_PIN_RESET && // Botão pressionado (GND)
+       last_cue_state == GPIO_PIN_SET && // Transição de não pressionado para pressionado
+       (now - last_cue_time) > BUTTON_DEBOUNCE_TIME) // Debounce
+    {
+        SendNote(61); // Nota MIDI para Cue
+        last_cue_time = now;
+    }
+    last_cue_state = cue_state;
+
+    HAL_Delay(1); // Pequeno delay para evitar loop muito rápido
+  /* USER CODE END WHILE */
+
+  /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  /** Configure the main internal regulator output voltage
+  */
+  __HAL_RCC_PWR_CLK_ENABLE();
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 25;
+  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  __disable_irq();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */

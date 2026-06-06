@@ -73,12 +73,12 @@ void Error_Handler(void);
 #define ZIP_GPIO_Port GPIOB
 #define WAH_Pin GPIO_PIN_1
 #define WAH_GPIO_Port GPIOB
+#define EJECT_Pin GPIO_PIN_8
+#define EJECT_GPIO_Port GPIOA
+#define MT_Pin GPIO_PIN_9
+#define MT_GPIO_Port GPIOA
 #define TEMPO_Pin GPIO_PIN_3
 #define TEMPO_GPIO_Port GPIOB
-#define EJECT_Pin GPIO_PIN_4
-#define EJECT_GPIO_Port GPIOB
-#define MT_Pin GPIO_PIN_5
-#define MT_GPIO_Port GPIOB
 #define PLAY_Pin GPIO_PIN_6
 #define PLAY_GPIO_Port GPIOB
 #define HOLD_Pin GPIO_PIN_7

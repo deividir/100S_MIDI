@@ -50,17 +50,17 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pins : STOP_Pin SEARCH__Pin SEARCH_A4_Pin TRACK__Pin
-                           TRACK_A6_Pin JET_Pin */
+                           TRACK_A6_Pin JET_Pin EJECT_Pin MT_Pin */
   GPIO_InitStruct.Pin = STOP_Pin|SEARCH__Pin|SEARCH_A4_Pin|TRACK__Pin
-                          |TRACK_A6_Pin|JET_Pin;
+                          |TRACK_A6_Pin|JET_Pin|EJECT_Pin|MT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : ZIP_Pin WAH_Pin TEMPO_Pin EJECT_Pin
-                           MT_Pin PLAY_Pin HOLD_Pin */
-  GPIO_InitStruct.Pin = ZIP_Pin|WAH_Pin|TEMPO_Pin|EJECT_Pin
-                          |MT_Pin|PLAY_Pin|HOLD_Pin;
+  /*Configure GPIO pins : ZIP_Pin WAH_Pin TEMPO_Pin PLAY_Pin
+                           HOLD_Pin */
+  GPIO_InitStruct.Pin = ZIP_Pin|WAH_Pin|TEMPO_Pin|PLAY_Pin
+                          |HOLD_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
