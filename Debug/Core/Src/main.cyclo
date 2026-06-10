@@ -1,8 +1,8 @@
-../Core/Src/main.c:148:6:SendCC	1
-../Core/Src/main.c:155:6:SendNoteOn	1
-../Core/Src/main.c:162:6:SendNoteOff	1
-../Core/Src/main.c:170:6:My_LCD_Create_Char	2
-../Core/Src/main.c:180:6:Update_LCD_Scrolls	6
-../Core/Src/main.c:226:5:main	49
-../Core/Src/main.c:550:6:SystemClock_Config	3
-../Core/Src/main.c:588:6:Error_Handler	1
+../Core/Src/main.c:154:6:SendCC	2
+../Core/Src/main.c:161:6:SendNoteOn	2
+../Core/Src/main.c:168:6:SendNoteOff	2
+../Core/Src/main.c:176:6:My_LCD_Create_Char	2
+../Core/Src/main.c:186:6:Update_LCD_Scrolls	6
+../Core/Src/main.c:232:5:main	54
+../Core/Src/main.c:590:6:SystemClock_Config	3
+../Core/Src/main.c:628:6:Error_Handler	1

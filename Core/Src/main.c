@@ -107,8 +107,14 @@ static uint8_t last_tempo_state = GPIO_PIN_SET;
 static uint32_t last_tempo_time = 0;
 
 // Hold Button (PB7)
-static uint8_t last_hold_state = GPIO_PIN_SET;
-static uint32_t last_hold_time = 0;
+/*static uint8_t last_hold_state = GPIO_PIN_SET;
+static uint32_t last_hold_time = 0; */
+
+/* ================= DECK CONTROL ================= */
+uint8_t current_deck = 0;
+static uint8_t hold_pressed = 0;
+static uint32_t hold_press_start = 0;
+static uint8_t hold_longpress_done = 0;
 
 // Wah Button (PB1)
 static uint8_t last_wah_state = GPIO_PIN_SET;
@@ -147,21 +153,21 @@ void My_LCD_Create_Char(uint8_t location, uint8_t *charmap);
 /* USER CODE BEGIN 0 */
 void SendCC(uint8_t cc, uint8_t value)
 {
-    uint8_t msg[4] = {0x0B, 0xB0, cc, value & 0x7F};
+    uint8_t msg[4] = {0x0B, current_deck ? 0xB1 : 0xB0, cc, value & 0x7F};
     USBD_MIDI_SetTxBuffer(&hUsbDeviceFS, msg, 4);
     USBD_MIDI_TransmitPacket(&hUsbDeviceFS);
 }
 
 void SendNoteOn(uint8_t note)
 {
-    uint8_t msg[4] = {0x09, 0x90, note, 127};
+    uint8_t msg[4] = {0x09, current_deck ? 0x91 : 0x90, note, 127};
     USBD_MIDI_SetTxBuffer(&hUsbDeviceFS, msg, 4);
     USBD_MIDI_TransmitPacket(&hUsbDeviceFS);
 }
 
 void SendNoteOff(uint8_t note)
 {
-    uint8_t msg[4] = {0x08, 0x80, note, 0};
+    uint8_t msg[4] = {0x08, current_deck ? 0x81 : 0x80, note, 0};
     USBD_MIDI_SetTxBuffer(&hUsbDeviceFS, msg, 4);
     USBD_MIDI_TransmitPacket(&hUsbDeviceFS);
 }
@@ -265,6 +271,10 @@ int main(void)
   // INICIALIZA O LCD
   lcd_init();
   lcd_clear();
+  lcd_put_cur(0,0);
+  lcd_send_string("DECK A");
+  lcd_put_cur(1,0);
+  lcd_send_string("DJ Deividi");
 
   // Definição binária do triângulo clássico do PLAY
   uint8_t simbolo_play[8] = {
@@ -289,8 +299,6 @@ int main(void)
   {
     uint32_t now = HAL_GetTick();
 
-    /* ================= LCD SCROLL ANIMATIONS ================= */
-    Update_LCD_Scrolls(now);
 
     /* ================= PITCH (ADC + FILTER) ================= */
     uint32_t soma = 0;
@@ -312,7 +320,7 @@ int main(void)
     {
         uint8_t msg[4];
         msg[0] = 0x0E;
-        msg[1] = 0xE0;
+        msg[1] = current_deck ? 0xE1 : 0xE0;
         msg[2] = pitch_value & 0x7F;
         msg[3] = (pitch_value >> 7) & 0x7F;
 
@@ -343,21 +351,37 @@ int main(void)
 
     /* ================= PLAY ================= */
     uint8_t play_state = HAL_GPIO_ReadPin(PLAY_GPIO_Port, PLAY_Pin);
-    if(play_state == GPIO_PIN_RESET && last_play_state == GPIO_PIN_SET && (now - last_play_time) > BUTTON_DEBOUNCE_TIME)
+    if((now - last_play_time) > BUTTON_DEBOUNCE_TIME)
     {
-        SendNoteOn(60);
-        last_play_time = now;
+        if(play_state != last_play_state)
+        {
+            if(play_state == GPIO_PIN_RESET) {
+                SendNoteOn(60);
+            } else {
+                SendNoteOff(60);
+            }
+
+            last_play_time = now;
+            last_play_state = play_state;
+        }
     }
-    last_play_state = play_state;
 
     /* ================= CUE ================= */
     uint8_t cue_state = HAL_GPIO_ReadPin(STOP_GPIO_Port, STOP_Pin);
-    if(cue_state == GPIO_PIN_RESET && last_cue_state == GPIO_PIN_SET && (now - last_cue_time) > BUTTON_DEBOUNCE_TIME)
+    if((now - last_cue_time) > BUTTON_DEBOUNCE_TIME)
     {
-        SendNoteOn(61);
-        last_cue_time = now;
+        if(cue_state != last_cue_state)
+        {
+            if(cue_state == GPIO_PIN_RESET) {
+                SendNoteOn(61);
+            } else {
+                SendNoteOff(61);
+            }
+
+            last_cue_time = now;
+            last_cue_state = cue_state;
+        }
     }
-    last_cue_state = cue_state;
 
     /* ================= TRACK+ (PA5) ================= */
     uint8_t track_plus_state = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5);
@@ -473,18 +497,34 @@ int main(void)
 
     /* ================= HOLD (PB7) ================= */
     uint8_t hold_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7);
-    if((now - last_hold_time) > BUTTON_DEBOUNCE_TIME)
+
+    if(hold_state == GPIO_PIN_RESET && !hold_pressed)
     {
-        if(hold_state != last_hold_state)
-        {
-            if(hold_state == GPIO_PIN_RESET) {
-                SendNoteOn(69);
-            } else {
-                SendNoteOff(69);
-            }
-            last_hold_time = now;
-            last_hold_state = hold_state;
-        }
+        hold_pressed = 1;
+        hold_press_start = now;
+        hold_longpress_done = 0;
+    }
+
+    if(hold_pressed && !hold_longpress_done && ((now - hold_press_start) >= 2000))
+    {
+        current_deck ^= 1;
+
+        lcd_clear();
+        lcd_put_cur(0,0);
+        if(current_deck == 0)
+            lcd_send_string("DECK A");
+        else
+            lcd_send_string("DECK B");
+
+        lcd_put_cur(1,0);
+        lcd_send_string("DJ Deividi");
+
+        hold_longpress_done = 1;
+    }
+
+    if(hold_state == GPIO_PIN_SET)
+    {
+        hold_pressed = 0;
     }
 
     /* ================= WAH (PB1) ================= */
