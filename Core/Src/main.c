@@ -44,10 +44,6 @@
 #define PITCH_THRESHOLD 20 // Sensibilidade do Pitch
 #define PITCH_SEND_INTERVAL 10 // Intervalo mínimo para enviar Pitch Bend (ms)
 #define BUTTON_DEBOUNCE_TIME 50 // Reduzido para maior precisão em botões momentâneos (ms)
-
-// VELOCIDADES DOS SCROLLS
-#define SCROLL_TEXT_INTERVAL 350  // Velocidade do texto subindo/andando (ms)
-#define SCROLL_PLAY_INTERVAL 200  // Velocidade do triângulo do Play correndo (ms)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -106,15 +102,14 @@ static uint32_t last_eject_time = 0;
 static uint8_t last_tempo_state = GPIO_PIN_SET;
 static uint32_t last_tempo_time = 0;
 
-// Hold Button (PB7)
-/*static uint8_t last_hold_state = GPIO_PIN_SET;
-static uint32_t last_hold_time = 0; */
-
-/* ================= DECK CONTROL ================= */
+/* ================= DECK CONTROL & LED STATES ================= */
 uint8_t current_deck = 0;
 static uint8_t hold_pressed = 0;
 static uint32_t hold_press_start = 0;
 static uint8_t hold_longpress_done = 0;
+
+// Armazena o estado de todas as 128 notas para os 2 Decks (0 = Deck A, 1 = Deck B)
+uint8_t led_states[2][128] = {0};
 
 // Wah Button (PB1)
 static uint8_t last_wah_state = GPIO_PIN_SET;
@@ -127,16 +122,6 @@ static uint32_t last_zip_time = 0;
 // Jet Button (PA7)
 static uint8_t last_jet_state = GPIO_PIN_SET;
 static uint32_t last_jet_time = 0;
-
-/* ================= LCD SCROLL CONTROLS ================= */
-static uint32_t last_scroll_text_time = 0;
-static uint32_t last_scroll_play_time = 0;
-static int scroll_text_position = 0;
-static int scroll_play_position = 0;
-
-// Texto com espaços antes e depois para dar o efeito de entrar e sair perfeitamente da tela
-const char texto_nome[] = "                DJ Deividi                ";
-const int tamanho_texto = sizeof(texto_nome) - 1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -145,8 +130,10 @@ void SystemClock_Config(void);
 void SendCC(uint8_t cc, uint8_t value);
 void SendNoteOn(uint8_t note);
 void SendNoteOff(uint8_t note);
-void Update_LCD_Scrolls(uint32_t now);
 void My_LCD_Create_Char(uint8_t location, uint8_t *charmap);
+void Refresh_LEDs(void);
+void Update_LCD_Status(void);
+void ProcessMidiRx(uint8_t *buf, uint32_t length);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -179,48 +166,6 @@ void My_LCD_Create_Char(uint8_t location, uint8_t *charmap)
     lcd_send_cmd(0x40 + (location << 3)); // Aponta para a memória CGRAM do LCD
     for (int i = 0; i < 8; i++) {
         lcd_send_data(charmap[i]); // Escreve as 8 linhas do desenho
-    }
-}
-
-// FUNÇÃO DE SCROLL DUPLO E INDEPENDENTE
-void Update_LCD_Scrolls(uint32_t now)
-{
-    /* ----- SCROLL DA LINHA 1: TEXTO (DJ Deividi) ----- */
-    if (now - last_scroll_text_time >= SCROLL_TEXT_INTERVAL)
-    {
-        last_scroll_text_time = now;
-        char janela_texto[17];
-
-        for (int i = 0; i < 16; i++) {
-            janela_texto[i] = texto_nome[(scroll_text_position + i) % tamanho_texto];
-        }
-        janela_texto[16] = '\0';
-
-        lcd_put_cur(0, 0);
-        lcd_send_string(janela_texto);
-
-        scroll_text_position++;
-        if (scroll_text_position >= tamanho_texto) {
-            scroll_text_position = 0;
-        }
-    }
-
-    /* ----- SCROLL DA LINHA 2: TRIÂNGULO DO PLAY CORRENDO ----- */
-    if (now - last_scroll_play_time >= SCROLL_PLAY_INTERVAL)
-    {
-        last_scroll_play_time = now;
-
-        lcd_put_cur(1, 0);
-        lcd_send_string("                ");
-
-        lcd_put_cur(1, scroll_play_position);
-        lcd_send_data(0); // Manda desenhar o caractere customizado 0
-
-        scroll_play_position++;
-        if (scroll_play_position >= 16)
-        {
-            scroll_play_position = 0;
-        }
     }
 }
 /* USER CODE END 0 */
@@ -271,25 +216,15 @@ int main(void)
   // INICIALIZA O LCD
   lcd_init();
   lcd_clear();
-  lcd_put_cur(0,0);
-  lcd_send_string("DECK A");
-  lcd_put_cur(1,0);
-  lcd_send_string("DJ Deividi");
 
-  // Definição binária do triângulo clássico do PLAY
-  uint8_t simbolo_play[8] = {
-      0x10,  // ■ □ □ □ □
-      0x18,  // ■ ■ □ □ □
-      0x1C,  // ■ ■ ■ □ □
-      0x1E,  // ■ ■ ■ ■ □
-      0x1C,  // ■ ■ ■ □ □
-      0x18,  // ■ ■ □ □ □
-      0x10,  // ■ □ □ □ □
-      0x00   // □ □ □ □ □
-  };
+  // Escreve o nome na segunda linha permanentemente
+  lcd_put_cur(1, 0);
+  lcd_send_string("   DJ Deividi   ");
 
-  // Usando a nossa função segura que funciona em qualquer biblioteca LCD I2C
-  My_LCD_Create_Char(0, simbolo_play);
+  // Mostra o status inicial na primeira linha
+  Update_LCD_Status();
+  // Atualiza o estado dos LEDs na inicialização
+  Refresh_LEDs();
 
   /* USER CODE END 2 */
 
@@ -495,7 +430,7 @@ int main(void)
         }
     }
 
-    /* ================= HOLD (PB7) ================= */
+    /* ================= HOLD (PB7) - ALTERNADOR DE DECK ================= */
     uint8_t hold_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7);
 
     if(hold_state == GPIO_PIN_RESET && !hold_pressed)
@@ -509,15 +444,11 @@ int main(void)
     {
         current_deck ^= 1;
 
-        lcd_clear();
-        lcd_put_cur(0,0);
-        if(current_deck == 0)
-            lcd_send_string("DECK A");
-        else
-            lcd_send_string("DECK B");
+        // Atualiza na hora o estado dos LEDs físicos para bater com o novo Deck ativo
+        Refresh_LEDs();
 
-        lcd_put_cur(1,0);
-        lcd_send_string("DJ Deividi");
+        // Atualiza dinamicamente a linha superior do LCD com o novo Deck e o status atual dele
+        Update_LCD_Status();
 
         hold_longpress_done = 1;
     }
@@ -622,7 +553,124 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+/**
+  * @brief  Atualiza os pinos físicos dos LEDs baseando-se no Deck atual e na tabela armazenada.
+  * @retval None
+  */
+void Refresh_LEDs(void)
+{
+    /* Abaixo estão os mapeamentos via MIDI OUT pelo Serato.
+       Descomente as linhas e altere os nomes "PORT" e "Pin" para as saídas
+       reais configuradas no seu CubeMX para o painel do seu CDJ-100S.
+    */
 
+    // Nota 60 = LED do PLAY
+    // HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, led_states[current_deck][60] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+    // Nota 61 = LED do CUE
+    // HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, led_states[current_deck][61] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+    // Nota 64 = LED do Search +
+    // HAL_GPIO_WritePin(LED_SEARCH_PLUS_GPIO_Port, LED_SEARCH_PLUS_Pin, led_states[current_deck][64] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+    // Nota 65 = LED do Search -
+    // HAL_GPIO_WritePin(LED_SEARCH_MINUS_GPIO_Port, LED_SEARCH_MINUS_Pin, led_states[current_deck][65] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+    // Nota 71 = LED do Zip (Mapeado como Sync)
+    // HAL_GPIO_WritePin(LED_ZIP_GPIO_Port, LED_ZIP_Pin, led_states[current_deck][71] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+    // Nota 72 = LED do Jet (Mapeado como Sync Off)
+    // HAL_GPIO_WritePin(LED_JET_GPIO_Port, LED_JET_Pin, led_states[current_deck][72] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+    // Controle dos pinos PB12 e PB13 com base na Nota 60 (Play/Pause)
+    if (led_states[current_deck][60] == 1) // Se a Nota 60 (Play) estiver ligada
+    {
+        HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_SET);   // Liga LED_PLAY
+        HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_RESET); // Desliga LED_CUE
+    }
+    else // Se a Nota 60 (Play) estiver desligada (Pause)
+    {
+        HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_RESET); // Desliga LED_PLAY
+        HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_SET);   // Liga LED_CUE
+    }
+}
+
+/**
+  * @brief  Atualiza a linha superior do LCD com o status dinâmico do Deck atual.
+  * @retval None
+  */
+void Update_LCD_Status(void)
+{
+    lcd_put_cur(0, 0); // Move o cursor para o começo da primeira linha
+
+    // 1. Verifica se o Serato diz que o PLAY está ativo (Nota 60 = LIGADO)
+    if (led_states[current_deck][60] == 1)
+    {
+        if (current_deck == 0)
+            lcd_send_string("DECK A - PLAY   ");
+        else
+            lcd_send_string("DECK B - PLAY   ");
+    }
+    // 2. Se o Play está desligado, verifica se o CUE está ativo (Nota 61 = LIGADO)
+    else if (led_states[current_deck][61] == 1)
+    {
+        if (current_deck == 0)
+            lcd_send_string("DECK A - CUE    ");
+        else
+            lcd_send_string("DECK B - CUE    ");
+    }
+    // 3. Se nenhum dos dois está ativo, o deck está em PAUSE
+    else
+    {
+        if (current_deck == 0)
+            lcd_send_string("DECK A - PAUSE  ");
+        else
+            lcd_send_string("DECK B - PAUSE  ");
+    }
+    // Garante que os LEDs sejam atualizados sempre que o status do LCD mudar
+    Refresh_LEDs();
+}
+
+/**
+  * @brief  Processa os pacotes USB MIDI recebidos (Midi Out do Host / Serato).
+  * @param  buf: ponteiro para o buffer de recepção USB
+  * @param  length: tamanho dos dados recebidos
+  * @retval None
+  */
+void ProcessMidiRx(uint8_t *buf, uint32_t length)
+{
+    // Varre o buffer USB de 4 em 4 bytes (formato padrão USB-MIDI de mensagens)
+    for (uint32_t i = 0; i < length; i += 4)
+    {
+        uint8_t status_byte = buf[i + 1]; // Ex: 0x90 (Note On Canal 1), 0x91 (Note On Canal 2)
+        uint8_t note_number = buf[i + 2]; // O número da nota gerada (60, 61, etc.)
+        uint8_t velocity    = buf[i + 3]; // Velocidade (127 = On / Liga, 0 = Off / Desliga)
+
+        uint8_t msg_channel = status_byte & 0x0F; // Isola o canal: 0 = Deck A (Ch 1), 1 = Deck B (Ch 2)
+        uint8_t msg_type    = status_byte & 0xF0; // Isola o comando: 0x90 = Note On, 0x80 = Note Off
+
+        // Filtra se a mensagem recebida é do tipo Note On ou Note Off
+        if (msg_type == 0x90 || msg_type == 0x80)
+        {
+            // Se o comando for Note On com velocidade maior que zero, liga (1). Caso contrário, desliga (0).
+            uint8_t state = (msg_type == 0x90 && velocity > 0) ? 1 : 0;
+
+            // Evita estouro de array garantindo os limites do barramento MIDI
+            if (msg_channel < 2 && note_number < 128)
+            {
+                // Registra o estado recebido na memória do respectivo Deck mapeado
+                led_states[msg_channel][note_number] = state;
+
+                // Se o comando MIDI enviado pelo Serato coincidir com o Deck atual na tela, atualiza o hardware e o LCD
+                if (msg_channel == current_deck)
+                {
+                    Refresh_LEDs();
+                    Update_LCD_Status();
+                }
+            }
+        }
+    }
+}
 /* USER CODE END 4 */
 
 void Error_Handler(void)

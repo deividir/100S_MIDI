@@ -1,7 +1,7 @@
 #include "usbd_midi.h"
 #include "usbd_ctlreq.h"
 
-#define USB_MIDI_CONFIG_DESC_SIZ 101
+/*#define USB_MIDI_CONFIG_DESC_SIZ 101*/
 
 __ALIGN_BEGIN static uint8_t USBD_MIDI_CfgDesc[USB_MIDI_CONFIG_DESC_SIZ] __ALIGN_END =
 {
@@ -116,6 +116,9 @@ __ALIGN_BEGIN static uint8_t USBD_MIDI_CfgDesc[USB_MIDI_CONFIG_DESC_SIZ] __ALIGN
 static uint8_t *txBuffer;
 static uint32_t txLength;
 
+/* Buffer adicionado para armazenar os dados vindos do Serato (Midi Out) */
+static uint8_t rxBuffer[64];
+
 static uint8_t USBD_MIDI_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx);
 static uint8_t USBD_MIDI_DeInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx);
 static uint8_t USBD_MIDI_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum);
@@ -152,6 +155,9 @@ static uint8_t USBD_MIDI_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
     USBD_LL_OpenEP(pdev, MIDI_OUT_EP, USBD_EP_TYPE_BULK, 64);
     pdev->ep_out[MIDI_OUT_EP & 0xFU].is_used = 1U;
 
+    /* Ativa a escuta USB para receber pacotes e guardá-los no rxBuffer */
+    USBD_LL_PrepareReceive(pdev, MIDI_OUT_EP, rxBuffer, 64);
+
     return USBD_OK;
 }
 
@@ -175,8 +181,19 @@ static uint8_t USBD_MIDI_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum)
 
 static uint8_t USBD_MIDI_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum)
 {
-    UNUSED(pdev);
-    UNUSED(epnum);
+    /* Intercepta a chegada de dados no Endpoint de Saída */
+    if (epnum == MIDI_OUT_EP)
+    {
+        /* Descobre o tamanho real em bytes do pacote recebido */
+        uint32_t rxLength = USBD_LL_GetRxDataSize(pdev, epnum);
+
+        /* Envia o buffer preenchido para a nossa função processadora lá no main.c */
+        extern void ProcessMidiRx(uint8_t *buf, uint32_t length);
+        ProcessMidiRx(rxBuffer, rxLength);
+
+        /* Rearma o Endpoint para ficar pronto e aberto para receber o próximo comando MIDI */
+        USBD_LL_PrepareReceive(pdev, MIDI_OUT_EP, rxBuffer, 64);
+    }
 
     return USBD_OK;
 }

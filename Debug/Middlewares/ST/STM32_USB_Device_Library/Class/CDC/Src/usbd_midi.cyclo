@@ -1,8 +1,8 @@
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:145:16:USBD_MIDI_Init	1
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:158:16:USBD_MIDI_DeInit	1
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:168:16:USBD_MIDI_DataIn	1
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:176:16:USBD_MIDI_DataOut	1
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:184:17:USBD_MIDI_GetFSCfgDesc	1
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:204:17:USBD_MIDI_GetDeviceQualifierDescriptor	1
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:210:9:USBD_MIDI_SetTxBuffer	1
-../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:222:9:USBD_MIDI_TransmitPacket	1
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:148:16:USBD_MIDI_Init	1
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:164:16:USBD_MIDI_DeInit	1
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:174:16:USBD_MIDI_DataIn	1
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:182:16:USBD_MIDI_DataOut	2
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:201:17:USBD_MIDI_GetFSCfgDesc	1
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:221:17:USBD_MIDI_GetDeviceQualifierDescriptor	1
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:227:9:USBD_MIDI_SetTxBuffer	1
+../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_midi.c:239:9:USBD_MIDI_TransmitPacket	1

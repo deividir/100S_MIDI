@@ -73,6 +73,10 @@ void Error_Handler(void);
 #define ZIP_GPIO_Port GPIOB
 #define WAH_Pin GPIO_PIN_1
 #define WAH_GPIO_Port GPIOB
+#define LED_PLAY_Pin GPIO_PIN_12
+#define LED_PLAY_GPIO_Port GPIOB
+#define LED_CUE_Pin GPIO_PIN_13
+#define LED_CUE_GPIO_Port GPIOB
 #define EJECT_Pin GPIO_PIN_8
 #define EJECT_GPIO_Port GPIOA
 #define MT_Pin GPIO_PIN_9
