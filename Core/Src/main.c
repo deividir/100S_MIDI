@@ -124,9 +124,11 @@ static uint32_t last_zip_time = 0;
 static uint8_t last_jet_state = GPIO_PIN_SET;
 static uint32_t last_jet_time = 0;
 
-static uint8_t current_play_state[2] = {0, 0}; // Estado estável do PLAY para cada deck (0=CUE/PAUSE, 1=PLAY)
-static uint8_t last_led_state[2] = {0, 0}; // Armazena o último estado dos LEDs para cada deck (0=CUE, 1=PLAY)
+static uint8_t current_play_state[2] = {0, 0}; // Estado estável do PLAY para cada deck (0=STOP, 1=PLAY)
+static uint8_t last_led_state[2] = {0, 0}; // Armazena o último estado dos LEDs para cada deck (0=STOP, 1=PLAY)
 static uint8_t status_changed = 1; // Flag para indicar que o status do LCD/LEDs precisa ser atualizado
+static uint32_t note_60_on_time[2] = {0, 0}; // Timestamp quando nota 60 ficou em 1 para cada deck
+#define PLAY_CONFIRM_TIME_MS 270 // Tempo em ms que nota 60 deve ficar em 1 para confirmar PLAY
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -224,7 +226,7 @@ int main(void)
 
   // Escreve o nome na segunda linha permanentemente
   lcd_put_cur(1, 0);
-  lcd_send_string("   DJ Deividi   ");
+  lcd_send_string("DJ Deividi  ");
 
   // Mostra o status inicial na primeira linha
   Update_LCD_Status();
@@ -516,6 +518,16 @@ int main(void)
         status_changed = 0; // Reseta a flag após a atualização
     }
 
+    // Verifica se nota 60 ficou em 1 por 3 segundos para confirmar PLAY
+    if (note_60_on_time[current_deck] != 0) {
+        if ((now - note_60_on_time[current_deck]) >= PLAY_CONFIRM_TIME_MS) {
+            if (current_play_state[current_deck] != 1) {
+                current_play_state[current_deck] = 1; // PLAY
+                status_changed = 1;
+            }
+        }
+    }
+
     HAL_Delay(1);
     /* USER CODE END WHILE */
 
@@ -569,22 +581,17 @@ void SystemClock_Config(void)
   */
 void Refresh_LEDs(void)
 {
-    uint8_t desired_led_state = current_play_state[current_deck]; // 1 para PLAY, 0 para CUE
+    uint8_t play_state = current_play_state[current_deck]; // 1 para PLAY, 0 para STOP
 
-    // Só atualiza os LEDs se o estado desejado for diferente do último estado aplicado
-    if (desired_led_state != last_led_state[current_deck])
+    if (play_state == 1) // PLAY
     {
-        if (desired_led_state == 1) // Se o PLAY está estável e ativo
-        {
-            HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_SET);   // Liga LED de PLAY
-            HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_RESET); // Desliga LED de CUE
-        }
-        else // Se o PLAY não está estável (ou seja, está em CUE/PAUSE)
-        {
-            HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_RESET); // Desliga LED de PLAY
-            HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_SET);   // Liga LED de CUE
-        }
-        last_led_state[current_deck] = desired_led_state;
+        HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_SET);   // Liga LED PLAY
+        HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_RESET); // Desliga LED STOP
+    }
+    else // STOP
+    {
+        HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_RESET); // Desliga LED PLAY
+        HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_SET);   // Liga LED STOP
     }
 }
 
@@ -597,22 +604,24 @@ static char last_lcd_status[17] = ""; // Armazena o último status exibido no LC
 void Update_LCD_Status(void)
 {
     char current_status[17];
+    uint8_t keylock_state = led_states[current_deck][67]; // Estado da nota 67 (Keylock)
+    char *keylock_indicator = (keylock_state == 1) ? "     [M]" : "     [ ]";
 
     // Verifica o estado estável do PLAY
     if (current_play_state[current_deck] == 1)
     {
         if (current_deck == 0)
-            sprintf(current_status, "DECK A - PLAY   ");
+            sprintf(current_status, "A - PLAY%s  ", keylock_indicator);
         else
-            sprintf(current_status, "DECK B - PLAY   ");
+            sprintf(current_status, "B - PLAY%s  ", keylock_indicator);
     }
-    // Se o Play está desligado, o deck está em CUE
+    // Se o Play está desligado, o deck está em STOP
     else
     {
         if (current_deck == 0)
-            sprintf(current_status, "DECK A -        ");
+            sprintf(current_status, "A - STOP%s  ", keylock_indicator);
         else
-            sprintf(current_status, "DECK B -        ");
+            sprintf(current_status, "B - STOP%s ", keylock_indicator);
     }
 
     // Só atualiza o LCD se o status mudou
@@ -654,12 +663,28 @@ void ProcessMidiRx(uint8_t *buf, uint32_t length)
                 // Registra o estado recebido na memória do respectivo Deck mapeado
                 led_states[msg_channel][note_number] = state;
 
-                // Lógica simplificada: PLAY (Nota 60) define o estado
+                // Lógica: PLAY quando nota 60 ON por 3 segundos, STOP quando nota 60 OFF
                 if (note_number == 60) {
-                    if (current_play_state[msg_channel] != state) {
-                        current_play_state[msg_channel] = state; // 1 para PLAY, 0 para CUE
-                        status_changed = 1;
+                    uint8_t state = (msg_type == 0x90 && velocity > 0) ? 1 : 0; // 1=ON, 0=OFF
+
+                    if (state == 1) {
+                        // Nota 60 ON - inicia o timer se ainda não estiver rodando
+                        if (note_60_on_time[msg_channel] == 0) {
+                            note_60_on_time[msg_channel] = HAL_GetTick();
+                        }
+                    } else {
+                        // Nota 60 OFF - reseta o timer e muda para STOP imediatamente
+                        note_60_on_time[msg_channel] = 0;
+                        if (current_play_state[msg_channel] != 0) {
+                            current_play_state[msg_channel] = 0; // STOP
+                            status_changed = 1;
+                        }
                     }
+                }
+
+                // Atualiza LCD quando Keylock (nota 67) mudar
+                if (note_number == 67 && msg_channel == current_deck) {
+                    status_changed = 1;
                 }
 
                 // Se o comando MIDI enviado pelo Serato coincidir com o Deck atual na tela, atualiza o hardware e o LCD
