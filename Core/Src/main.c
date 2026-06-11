@@ -44,6 +44,7 @@
 #define PITCH_THRESHOLD 20 // Sensibilidade do Pitch
 #define PITCH_SEND_INTERVAL 10 // Intervalo mínimo para enviar Pitch Bend (ms)
 #define BUTTON_DEBOUNCE_TIME 50 // Reduzido para maior precisão em botões momentâneos (ms)
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -122,6 +123,10 @@ static uint32_t last_zip_time = 0;
 // Jet Button (PA7)
 static uint8_t last_jet_state = GPIO_PIN_SET;
 static uint32_t last_jet_time = 0;
+
+static uint8_t current_play_state[2] = {0, 0}; // Estado estável do PLAY para cada deck (0=CUE/PAUSE, 1=PLAY)
+static uint8_t last_led_state[2] = {0, 0}; // Armazena o último estado dos LEDs para cada deck (0=CUE, 1=PLAY)
+static uint8_t status_changed = 1; // Flag para indicar que o status do LCD/LEDs precisa ser atualizado
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -444,11 +449,7 @@ int main(void)
     {
         current_deck ^= 1;
 
-        // Atualiza na hora o estado dos LEDs físicos para bater com o novo Deck ativo
-        Refresh_LEDs();
-
-        // Atualiza dinamicamente a linha superior do LCD com o novo Deck e o status atual dele
-        Update_LCD_Status();
+        status_changed = 1; // Força atualização de LCD e LEDs na troca de deck
 
         hold_longpress_done = 1;
     }
@@ -506,6 +507,15 @@ int main(void)
         }
     }
 
+
+
+    // Atualiza LCD e LEDs apenas se o status mudou
+    if (status_changed) {
+        Update_LCD_Status();
+        Refresh_LEDs();
+        status_changed = 0; // Reseta a flag após a atualização
+    }
+
     HAL_Delay(1);
     /* USER CODE END WHILE */
 
@@ -559,39 +569,22 @@ void SystemClock_Config(void)
   */
 void Refresh_LEDs(void)
 {
-    /* Abaixo estão os mapeamentos via MIDI OUT pelo Serato.
-       Descomente as linhas e altere os nomes "PORT" e "Pin" para as saídas
-       reais configuradas no seu CubeMX para o painel do seu CDJ-100S.
-    */
+    uint8_t desired_led_state = current_play_state[current_deck]; // 1 para PLAY, 0 para CUE
 
-    // Nota 60 = LED do PLAY
-    // HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, led_states[current_deck][60] ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-    // Nota 61 = LED do CUE
-    // HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, led_states[current_deck][61] ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-    // Nota 64 = LED do Search +
-    // HAL_GPIO_WritePin(LED_SEARCH_PLUS_GPIO_Port, LED_SEARCH_PLUS_Pin, led_states[current_deck][64] ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-    // Nota 65 = LED do Search -
-    // HAL_GPIO_WritePin(LED_SEARCH_MINUS_GPIO_Port, LED_SEARCH_MINUS_Pin, led_states[current_deck][65] ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-    // Nota 71 = LED do Zip (Mapeado como Sync)
-    // HAL_GPIO_WritePin(LED_ZIP_GPIO_Port, LED_ZIP_Pin, led_states[current_deck][71] ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-    // Nota 72 = LED do Jet (Mapeado como Sync Off)
-    // HAL_GPIO_WritePin(LED_JET_GPIO_Port, LED_JET_Pin, led_states[current_deck][72] ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-    // Controle dos pinos PB12 e PB13 com base na Nota 60 (Play/Pause)
-    if (led_states[current_deck][60] == 1) // Se a Nota 60 (Play) estiver ligada
+    // Só atualiza os LEDs se o estado desejado for diferente do último estado aplicado
+    if (desired_led_state != last_led_state[current_deck])
     {
-        HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_SET);   // Liga LED_PLAY
-        HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_RESET); // Desliga LED_CUE
-    }
-    else // Se a Nota 60 (Play) estiver desligada (Pause)
-    {
-        HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_RESET); // Desliga LED_PLAY
-        HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_SET);   // Liga LED_CUE
+        if (desired_led_state == 1) // Se o PLAY está estável e ativo
+        {
+            HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_SET);   // Liga LED de PLAY
+            HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_RESET); // Desliga LED de CUE
+        }
+        else // Se o PLAY não está estável (ou seja, está em CUE/PAUSE)
+        {
+            HAL_GPIO_WritePin(LED_PLAY_GPIO_Port, LED_PLAY_Pin, GPIO_PIN_RESET); // Desliga LED de PLAY
+            HAL_GPIO_WritePin(LED_CUE_GPIO_Port, LED_CUE_Pin, GPIO_PIN_SET);   // Liga LED de CUE
+        }
+        last_led_state[current_deck] = desired_led_state;
     }
 }
 
@@ -599,36 +592,36 @@ void Refresh_LEDs(void)
   * @brief  Atualiza a linha superior do LCD com o status dinâmico do Deck atual.
   * @retval None
   */
+static char last_lcd_status[17] = ""; // Armazena o último status exibido no LCD
+
 void Update_LCD_Status(void)
 {
-    lcd_put_cur(0, 0); // Move o cursor para o começo da primeira linha
+    char current_status[17];
 
-    // 1. Verifica se o Serato diz que o PLAY está ativo (Nota 60 = LIGADO)
-    if (led_states[current_deck][60] == 1)
+    // Verifica o estado estável do PLAY
+    if (current_play_state[current_deck] == 1)
     {
         if (current_deck == 0)
-            lcd_send_string("DECK A - PLAY   ");
+            sprintf(current_status, "DECK A - PLAY   ");
         else
-            lcd_send_string("DECK B - PLAY   ");
+            sprintf(current_status, "DECK B - PLAY   ");
     }
-    // 2. Se o Play está desligado, verifica se o CUE está ativo (Nota 61 = LIGADO)
-    else if (led_states[current_deck][61] == 1)
-    {
-        if (current_deck == 0)
-            lcd_send_string("DECK A - CUE    ");
-        else
-            lcd_send_string("DECK B - CUE    ");
-    }
-    // 3. Se nenhum dos dois está ativo, o deck está em PAUSE
+    // Se o Play está desligado, o deck está em CUE
     else
     {
         if (current_deck == 0)
-            lcd_send_string("DECK A - PAUSE  ");
+            sprintf(current_status, "DECK A -        ");
         else
-            lcd_send_string("DECK B - PAUSE  ");
+            sprintf(current_status, "DECK B -        ");
     }
-    // Garante que os LEDs sejam atualizados sempre que o status do LCD mudar
-    Refresh_LEDs();
+
+    // Só atualiza o LCD se o status mudou
+    if (strcmp(current_status, last_lcd_status) != 0)
+    {
+        lcd_put_cur(0, 0); // Move o cursor para o começo da primeira linha
+        lcd_send_string(current_status);
+        strcpy(last_lcd_status, current_status);
+    }
 }
 
 /**
@@ -661,11 +654,19 @@ void ProcessMidiRx(uint8_t *buf, uint32_t length)
                 // Registra o estado recebido na memória do respectivo Deck mapeado
                 led_states[msg_channel][note_number] = state;
 
+                // Lógica simplificada: PLAY (Nota 60) define o estado
+                if (note_number == 60) {
+                    if (current_play_state[msg_channel] != state) {
+                        current_play_state[msg_channel] = state; // 1 para PLAY, 0 para CUE
+                        status_changed = 1;
+                    }
+                }
+
                 // Se o comando MIDI enviado pelo Serato coincidir com o Deck atual na tela, atualiza o hardware e o LCD
                 if (msg_channel == current_deck)
                 {
-                    Refresh_LEDs();
-                    Update_LCD_Status();
+                    // A atualização de LEDs e LCD será baseada no current_play_state, que é atualizado no loop principal
+                    // Não chamamos Refresh_LEDs/Update_LCD_Status diretamente aqui para evitar o pisca-pisca
                 }
             }
         }
