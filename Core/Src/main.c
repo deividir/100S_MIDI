@@ -125,7 +125,6 @@ static uint8_t last_jet_state = GPIO_PIN_SET;
 static uint32_t last_jet_time = 0;
 
 static uint8_t current_play_state[2] = {0, 0}; // Estado estável do PLAY para cada deck (0=STOP, 1=PLAY)
-static uint8_t last_led_state[2] = {0, 0}; // Armazena o último estado dos LEDs para cada deck (0=STOP, 1=PLAY)
 static uint8_t status_changed = 1; // Flag para indicar que o status do LCD/LEDs precisa ser atualizado
 static uint32_t note_60_on_time[2] = {0, 0}; // Timestamp quando nota 60 ficou em 1 para cada deck
 #define PLAY_CONFIRM_TIME_MS 270 // Tempo em ms que nota 60 deve ficar em 1 para confirmar PLAY
@@ -140,6 +139,7 @@ void SendNoteOff(uint8_t note);
 void My_LCD_Create_Char(uint8_t location, uint8_t *charmap);
 void Refresh_LEDs(void);
 void Update_LCD_Status(void);
+void Update_LCD_Pitch(void);
 void ProcessMidiRx(uint8_t *buf, uint32_t length);
 /* USER CODE END PFP */
 
@@ -224,14 +224,12 @@ int main(void)
   lcd_init();
   lcd_clear();
 
-  // Escreve o nome na segunda linha permanentemente
-  lcd_put_cur(1, 0);
-  lcd_send_string("DJ Deividi  ");
-
   // Mostra o status inicial na primeira linha
   Update_LCD_Status();
   // Atualiza o estado dos LEDs na inicialização
   Refresh_LEDs();
+  // Atualiza o pitch na segunda linha
+  Update_LCD_Pitch();
 
   /* USER CODE END 2 */
 
@@ -528,6 +526,9 @@ int main(void)
         }
     }
 
+    // Atualiza pitch na segunda linha
+    Update_LCD_Pitch();
+
     HAL_Delay(1);
     /* USER CODE END WHILE */
 
@@ -630,6 +631,36 @@ void Update_LCD_Status(void)
         lcd_put_cur(0, 0); // Move o cursor para o começo da primeira linha
         lcd_send_string(current_status);
         strcpy(last_lcd_status, current_status);
+    }
+}
+
+void Update_LCD_Pitch(void)
+{
+    char pitch_str[17];
+    static char last_pitch_str[17] = "";
+
+    // Calcula a porcentagem do pitch (centro = 8192, range = +/-8%)
+    int pitch_center = 8192;
+    int pitch_max = 16383;
+    float pitch_percent = ((float)((int)pitch_filtered - pitch_center) / (pitch_max - pitch_center)) * 8.1f;
+
+    // Formata manualmente com uma casa decimal (sem usar %.1f)
+    int int_part = (int)pitch_percent;
+    int dec_part = (int)((pitch_percent - int_part) * 10);
+    if (dec_part < 0) dec_part = -dec_part;
+
+    // Formata a string: "DJ Deividi  +8.0%" ou "DJ Deividi  -8.0%"
+    if (pitch_percent >= 0)
+        sprintf(pitch_str, "DJ Deividi  +%d.%d%%", int_part, dec_part);
+    else
+        sprintf(pitch_str, "DJ Deividi  %d.%d%%", int_part, dec_part);
+
+    // Só atualiza se mudou
+    if (strcmp(pitch_str, last_pitch_str) != 0)
+    {
+        lcd_put_cur(1, 0);
+        lcd_send_string(pitch_str);
+        strcpy(last_pitch_str, pitch_str);
     }
 }
 
