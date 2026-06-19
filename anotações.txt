@@ -1,1 +1,1 @@
-copiar o usb_device.c e o usbd_desc.c da pasta usb_device app
+se deseja alterar algum pino no mx e gerar o código, é necessário copiar o usb_device.c e o usbd_desc.c da pasta usb_device app do bakcup
